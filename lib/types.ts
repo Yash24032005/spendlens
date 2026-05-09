@@ -34,6 +34,7 @@ export interface ToolRecommendation {
   projectedSpend: number;
   monthlySavings: number;
   reason: string;
+  message: string; // <--- Isse add kar diya taaki ResultsView.tsx ka error chala jaye
   credexNote?: string;
 }
 
