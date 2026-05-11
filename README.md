@@ -1,7 +1,7 @@
 # SpendLens — AI Spend Audit for Startups
 
 **SpendLens is a free web tool that audits your team's AI tool spend — Cursor, Claude, ChatGPT, GitHub Copilot, and others — and tells you exactly where you're overpaying and what to do about it.** Built as a lead-generation asset for [Credex](https://credex.rocks), the discounted AI credits marketplace.
-<!-- 
+
 ---
 
 ## Screenshots
@@ -88,4 +88,4 @@ create table leads (
 
 ---
 
-**Live URL:** https://spendlens.vercel.app -->
+**Live URL:** https://spendlens.vercel.app
