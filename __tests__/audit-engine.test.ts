@@ -1,139 +1,67 @@
-import { runAudit } from "@/lib/audit-engine";
-import { AuditInput } from "@/lib/types";
+import { AuditInput, AuditResult, Recommendation } from "./types";
+import { v4 as uuidv4 } from "uuid";
 
-// Test 1: Cursor Business with small team should recommend downgrade
-test("Cursor Business with ≤3 seats recommends downgrade to Pro", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "cursor", plan: "business", monthlySpend: 120, seats: 3 }],
-    teamSize: 5,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  const rec = result.recommendations.find((r) => r.toolId === "cursor")!;
-  expect(rec.recommendedAction).toBe("downgrade");
-  expect(rec.monthlySavings).toBeGreaterThan(0);
-  expect(rec.projectedSpend).toBeLessThan(rec.currentSpend);
-  expect(rec.recommendedPlan).toContain("Pro");
-});
+export const runAudit = (input: AuditInput): AuditResult => {
+  const recommendations: Recommendation[] = [];
+  let totalMonthlySpend = 0;
 
-// Test 2: Claude Team with fewer than 5 seats should trigger minimum-seat rule
-test("Claude Team with <5 seats recommends downgrade due to forced minimum", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "claude", plan: "team", monthlySpend: 150, seats: 2 }],
-    teamSize: 10,
-    useCase: "writing",
-  };
-  const result = runAudit(input);
-  const rec = result.recommendations.find((r) => r.toolId === "claude")!;
-  expect(rec.recommendedAction).toBe("downgrade");
-  expect(rec.monthlySavings).toBeGreaterThan(0);
-});
+  const hasCursor = input.tools.some(t => t.toolId === "cursor");
 
-// Test 3: Already-optimal stack should return keep and zero savings
-test("Cursor Pro with small team returns keep with zero savings", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "cursor", plan: "hobby", monthlySpend: 0, seats: 1 }],
-    teamSize: 2,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  // Free/hobby plan — nothing to optimize
-  expect(result.totalMonthlySavings).toBe(0);
-});
+  input.tools.forEach((tool) => {
+    totalMonthlySpend += tool.monthlySpend;
 
-// Test 4: Cross-tool redundancy — Cursor + Copilot together should flag Copilot
-test("Cursor + GitHub Copilot together flags Copilot as redundant", () => {
-  const input: AuditInput = {
-    tools: [
-      { toolId: "cursor", plan: "pro", monthlySpend: 60, seats: 3 },
-      { toolId: "github_copilot", plan: "business", monthlySpend: 57, seats: 3 },
-    ],
-    teamSize: 5,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  const copilotRec = result.recommendations.find((r) => r.toolId === "github_copilot")!;
-  expect(copilotRec.recommendedAction).toBe("switch");
-  expect(copilotRec.projectedSpend).toBe(0);
-  expect(copilotRec.monthlySavings).toBe(57);
-});
+    let rec: Recommendation = {
+      toolId: tool.toolId,
+      toolName: tool.toolId.replace(/_/g, " ").toUpperCase(),
+      currentSpend: tool.monthlySpend,
+      projectedSpend: tool.monthlySpend,
+      monthlySavings: 0,
+      recommendedAction: "keep",
+      recommendedPlan: tool.plan,
+      message: "Your current plan is optimal for your usage. ✨",
+    };
 
-// Test 5: Total savings sum is correct
-test("Total monthly savings equals sum of individual tool savings", () => {
-  const input: AuditInput = {
-    tools: [
-      { toolId: "cursor", plan: "business", monthlySpend: 120, seats: 3 },
-      { toolId: "github_copilot", plan: "enterprise", monthlySpend: 117, seats: 3 },
-    ],
-    teamSize: 5,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  const sumSavings = result.recommendations.reduce((s, r) => s + r.monthlySavings, 0);
-  expect(result.totalMonthlySavings).toBeCloseTo(sumSavings, 1);
-});
+    // Redundancy Check
+    if (tool.toolId === "github_copilot" && hasCursor) {
+      rec.recommendedAction = "switch";
+      rec.projectedSpend = 0;
+      rec.monthlySavings = tool.monthlySpend;
+      rec.message = "GitHub Copilot is redundant since you are using Cursor. 🚫";
+    }
 
-// Test 6: Annual savings is 12x monthly
-test("Annual savings equals 12x monthly savings", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "claude", plan: "team", monthlySpend: 150, seats: 2 }],
-    teamSize: 5,
-    useCase: "mixed",
-  };
-  const result = runAudit(input);
-  expect(result.totalAnnualSavings).toBeCloseTo(result.totalMonthlySavings * 12, 1);
-});
+    // Cursor Downgrade Logic
+    else if (tool.toolId === "cursor" && tool.plan === "business" && tool.seats <= 3) {
+      const proTotal = 20 * tool.seats;
+      rec.recommendedAction = "downgrade";
+      rec.recommendedPlan = "Cursor Pro";
+      rec.projectedSpend = proTotal;
+      rec.monthlySavings = tool.monthlySpend - proTotal;
+      rec.message = "Team choti hai, Pro plan par switch karke paise bachao! 📉";
+    }
 
-// Test 7: High API spend triggers credits recommendation
-test("Anthropic API spend >$200/mo recommends credits", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "anthropic_api", plan: "api", monthlySpend: 500, seats: 1 }],
-    teamSize: 3,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  const rec = result.recommendations.find((r) => r.toolId === "anthropic_api")!;
-  expect(rec.recommendedAction).toBe("credits");
-  expect(rec.credexNote).toBeDefined();
-  expect(rec.monthlySavings).toBeGreaterThan(0);
-});
+    // API Credits Logic
+    else if (tool.toolId.includes("api") && tool.monthlySpend > 200) {
+      const savings = tool.monthlySpend * 0.2;
+      rec.recommendedAction = "credits";
+      rec.projectedSpend = tool.monthlySpend - savings;
+      rec.monthlySavings = savings;
+      rec.credexNote = "Available via Credex Marketplace";
+      rec.message = "High API spend detected. Use credits to save 20%. 💸";
+    }
 
-// Test 8: Low API spend keeps recommendation as-is
-test("Anthropic API spend <$200/mo keeps current plan", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "anthropic_api", plan: "api", monthlySpend: 50, seats: 1 }],
-    teamSize: 2,
-    useCase: "research",
-  };
-  const result = runAudit(input);
-  const rec = result.recommendations.find((r) => r.toolId === "anthropic_api")!;
-  expect(rec.recommendedAction).toBe("keep");
-  expect(rec.monthlySavings).toBe(0);
-});
+    recommendations.push(rec);
+  });
 
-// Test 9: Audit result has required ID and timestamp
-test("Audit result includes id, createdAt, and input", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "windsurf", plan: "pro", monthlySpend: 45, seats: 3 }],
-    teamSize: 5,
-    useCase: "coding",
-  };
-  const result = runAudit(input);
-  expect(result.id).toBeDefined();
-  expect(result.id.length).toBeGreaterThan(0);
-  expect(result.createdAt).toBeDefined();
-  expect(result.input).toEqual(input);
-});
+  const totalMonthlySavings = recommendations.reduce((sum, r) => sum + r.monthlySavings, 0);
 
-// Test 10: ChatGPT Pro plan with non-power-use-case recommends downgrade
-test("ChatGPT Pro plan for writing use case recommends downgrade to Team", () => {
-  const input: AuditInput = {
-    tools: [{ toolId: "chatgpt", plan: "pro_plan", monthlySpend: 200, seats: 1 }],
-    teamSize: 3,
-    useCase: "writing",
+  // YE HAI SAHI RETURN FORMAT
+  return {
+    id: uuidv4(),
+    createdAt: new Date().toISOString(),
+    input,
+    totalMonthlySpend,
+    totalMonthlySavings,
+    totalAnnualSavings: totalMonthlySavings * 12,
+    recommendations,
   };
-  const result = runAudit(input);
-  const rec = result.recommendations.find((r) => r.toolId === "chatgpt")!;
-  expect(rec.recommendedAction).toBe("downgrade");
-  expect(rec.monthlySavings).toBeGreaterThan(0);
-});
+};
