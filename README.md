@@ -6,9 +6,13 @@
 
 ## Screenshots
 
-> See `/public/screenshots/` or the Loom walkthrough below
+| Dashboard | Audit Results | Upgrade Pro
+|---|---|
+| ![Dashboard Home](/public/screenshot/dashboard.png) | ![Audit Analysis](/public/screenshot/results.png) | ![Upgrade Pro](/public/screenshot/upgradepro.png)
 
-**[30-second screen recording (Loom)](https://loom.com/share/placeholder)**
+> **Note:** Screenshots are also available in the `/public/screenshots/` directory.
+
+**[30-second screen recording (MIRCOSOFT CLIP)](https://drive.google.com/file/d/1Y2xvvdvgnhrgQ0aeXVYX5in-Z53a_Syh/view?usp=drive_link)**
 
 ---
 
@@ -88,4 +92,4 @@ create table leads (
 
 ---
 
-**Live URL:** https://spendlens.vercel.app
+**Live URL:** https://spendlens-murex.vercel.app/
